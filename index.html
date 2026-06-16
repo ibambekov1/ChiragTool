@@ -794,6 +794,24 @@ function renderData(){
   bb.append(el("button",{class:"btn",onclick:loadSample},"Load sample data"));
   back.append(bb); root.append(back);
 
+  // Repo sync (cases.json)
+  const repo=el("div",{class:"panel",style:"margin-top:16px"});
+  repo.append(el("div",{class:"ph"},el("h2",{},"Repo sync — cases.json"),el("span",{class:"hint"},"for GitHub Pages")));
+  const rb=el("div",{class:"pb"});
+  rb.append(el("div",{class:"notice",style:"margin-bottom:14px"},
+    el("div",{html:'<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16h.01"/></svg>'}),
+    el("div",{},el("b",{},"How saving to the repo works. "),
+      "GitHub Pages can host your data but can't write to it, so the round trip is: ",
+      el("b",{},"Download cases.json"),
+      " here \u2192 upload it to your repo (replace the old file) \u2192 it now loads on every device. ",
+      "A device with no local cases pulls cases.json automatically on open; on a device that already has cases, use ",
+      el("b",{},"Load from repo"),
+      " to merge in cases you added elsewhere (matched by ID, no duplicates).")));
+  const rrow=el("div",{style:"display:flex;gap:10px;flex-wrap:wrap"});
+  rrow.append(el("button",{class:"btn primary",onclick:downloadRepoFile},icon("download"),"Download cases.json"));
+  rrow.append(el("button",{class:"btn",onclick:loadRepoFile},icon("upload"),"Load from repo"));
+  rb.append(rrow); repo.append(rb); root.append(repo);
+
   // Lists
   const listsRow=el("div",{class:"cols",style:"margin-top:16px"});
   listsRow.append(listEditor("Attendings","attendings"));
@@ -843,6 +861,32 @@ function exportJSON(){
     cases:STATE.cases,targets:STATE.targets,lists:STATE.lists};
   download(`cath-log-backup-${new Date().toISOString().slice(0,10)}.json`,JSON.stringify(payload,null,2),"application/json");
   toast("Backup downloaded");
+}
+/* ---------- repo sync (cases.json) ---------- */
+function repoPayload(){
+  return {app:"cath-log",version:1,exported:new Date().toISOString(),
+    cases:STATE.cases,targets:STATE.targets,lists:STATE.lists};
+}
+function downloadRepoFile(){
+  download("cases.json",JSON.stringify(repoPayload(),null,2),"application/json");
+  toast("cases.json downloaded — upload it to your repo to publish");
+}
+async function fetchRepoFile(){
+  const r=await fetch("cases.json?ts="+Date.now(),{cache:"no-store"});
+  if(!r.ok) throw new Error("not found");
+  const d=await r.json();
+  if(!Array.isArray(d.cases)) throw new Error("bad file");
+  return d;
+}
+async function loadRepoFile(){
+  let d; try{ d=await fetchRepoFile(); }
+  catch(e){ toast("No readable cases.json here — deploy it to your repo first"); return; }
+  const have=new Set(STATE.cases.map(c=>c.id));
+  let added=0; d.cases.forEach(c=>{ if(c&&c.id&&!have.has(c.id)){STATE.cases.push(c);added++;} });
+  if(d.lists){ ["attendings","hospitals"].forEach(k=>(d.lists[k]||[]).forEach(v=>{ if(!STATE.lists[k].includes(v))STATE.lists[k].push(v); })); }
+  BOARD.forEach(b=>{ if(STATE.targets[b.key]==null) STATE.targets[b.key]=(d.targets&&d.targets[b.key]!=null?d.targets[b.key]:b.target); });
+  save(); toast(added?`Merged ${added} new case(s) from repo`:"Already in sync with repo");
+  go("dashboard");
 }
 function exportCSV(){
   const cols=["date","hospital","mrn","initials","age","sex","procedure","role","attending","outcome"];
@@ -921,7 +965,22 @@ function icon(name){
 }
 
 /* ---------- boot ---------- */
-load(); go("dashboard");
+(async function boot(){
+  load();
+  if(STATE.cases.length===0){
+    try{
+      const d=await fetchRepoFile();
+      if(d.cases.length){
+        STATE.cases=d.cases;
+        if(d.lists) STATE.lists=d.lists;
+        if(d.targets) Object.assign(STATE.targets,d.targets);
+        BOARD.forEach(b=>{ if(STATE.targets[b.key]==null) STATE.targets[b.key]=b.target; });
+        save();
+      }
+    }catch(e){ /* no cases.json (or opened from file://) — start empty */ }
+  }
+  go("dashboard");
+})();
 </script>
 </body>
 </html>
