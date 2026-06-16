@@ -1,0 +1,927 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Cath Log — Interventional Cardiology Fellowship Case Log</title>
+<meta name="description" content="A fast, private case log and analytics dashboard for interventional cardiology fellows." />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<style>
+:root{
+  --bg:#ffffff; --panel:#f5f7fa; --panel-2:#eaeff5;
+  --ink:#0e1b2e; --ink-soft:#5c6b80; --ink-faint:#8a98ab;
+  --line:#dde4ec; --line-soft:#eaeff5;
+  --navy:#0b2d5c; --navy-2:#163e73; --navy-3:#1f5299;
+  --accent:#1f6feb;
+  --ok:#1e7b45; --ok-bg:#e7f4ec;
+  --warn:#b7791f; --bad:#b3261e;
+  --rad:10px; --rad-sm:7px;
+  --shadow:0 1px 2px rgba(14,27,46,.06), 0 4px 16px rgba(14,27,46,.05);
+  --shadow-sm:0 1px 2px rgba(14,27,46,.07);
+  --mono:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace;
+  --sans:"Inter",-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  /* metric accents */
+  --m-total:#0b2d5c; --m-pci:#163e73; --m-cto:#5b21b6; --m-stemi:#b3261e;
+  --m-shock:#c2410c; --m-ivus:#0e7c86; --m-ffr:#0f766e; --m-impella:#9a6700; --m-struct:#1f5299;
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{
+  font-family:var(--sans); color:var(--ink); background:var(--bg);
+  -webkit-font-smoothing:antialiased; font-size:14px; line-height:1.45;
+}
+button{font-family:inherit}
+h1,h2,h3{margin:0;font-weight:600;letter-spacing:-.01em}
+a{color:var(--navy-3)}
+
+/* ---------- layout ---------- */
+.app{display:flex;min-height:100vh}
+.rail{
+  width:228px;flex:0 0 228px;background:var(--navy);color:#cdd9ec;
+  display:flex;flex-direction:column;position:sticky;top:0;height:100vh;
+}
+.brand{padding:20px 18px 14px;border-bottom:1px solid rgba(255,255,255,.08)}
+.brand .logo{display:flex;align-items:center;gap:10px}
+.brand .pulse{width:26px;height:26px;flex:0 0 26px}
+.brand b{color:#fff;font-size:16px;letter-spacing:-.02em;font-weight:700}
+.brand .sub{color:#8aa1c4;font-size:11px;margin-top:2px;letter-spacing:.02em}
+.nav{padding:10px 10px;display:flex;flex-direction:column;gap:2px;flex:1;overflow:auto}
+.nav button{
+  display:flex;align-items:center;gap:11px;width:100%;text-align:left;
+  background:transparent;border:0;color:#bcccE3;padding:10px 12px;border-radius:8px;
+  font-size:13.5px;font-weight:500;cursor:pointer;transition:background .12s,color .12s;
+}
+.nav button:hover{background:rgba(255,255,255,.06);color:#fff}
+.nav button.active{background:#fff;color:var(--navy);font-weight:600}
+.nav button.active svg{stroke:var(--navy)}
+.nav svg{width:18px;height:18px;stroke:#9db2d3;stroke-width:1.8;fill:none;flex:0 0 18px}
+.nav button:hover svg{stroke:#fff}
+.rail .foot{padding:12px 16px;border-top:1px solid rgba(255,255,255,.08);font-size:11px;color:#7e93b6}
+
+.main{flex:1;min-width:0;background:var(--panel);display:flex;flex-direction:column}
+.topbar{
+  background:var(--bg);border-bottom:1px solid var(--line);
+  padding:16px 26px;display:flex;align-items:flex-end;justify-content:space-between;gap:16px;
+  position:sticky;top:0;z-index:5;
+}
+.topbar .ttl h1{font-size:19px}
+.topbar .ttl p{margin:3px 0 0;color:var(--ink-soft);font-size:12.5px}
+.topbar .acts{display:flex;gap:9px;flex-wrap:wrap}
+.view{padding:22px 26px 90px;max-width:1240px;width:100%}
+.view.hidden{display:none}
+
+/* ---------- buttons ---------- */
+.btn{
+  border:1px solid var(--line);background:var(--bg);color:var(--ink);
+  padding:9px 14px;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;
+  display:inline-flex;align-items:center;gap:7px;transition:.12s;white-space:nowrap;
+}
+.btn:hover{border-color:var(--navy-3);color:var(--navy)}
+.btn.primary{background:var(--navy);border-color:var(--navy);color:#fff}
+.btn.primary:hover{background:var(--navy-2)}
+.btn.ghost{background:transparent;border-color:transparent;color:var(--ink-soft)}
+.btn.ghost:hover{background:var(--panel-2);color:var(--ink)}
+.btn.danger:hover{border-color:var(--bad);color:var(--bad)}
+.btn svg{width:15px;height:15px;stroke:currentColor;stroke-width:2;fill:none}
+.btn.sm{padding:6px 10px;font-size:12px}
+
+/* ---------- cards ---------- */
+.grid{display:grid;gap:16px}
+.kpis{grid-template-columns:repeat(auto-fit,minmax(148px,1fr))}
+.kpi{
+  background:var(--bg);border:1px solid var(--line);border-radius:var(--rad);
+  padding:15px 16px 14px;position:relative;overflow:hidden;box-shadow:var(--shadow-sm);
+}
+.kpi::before{content:"";position:absolute;top:0;left:0;right:0;height:3px;background:var(--c,var(--navy))}
+.kpi .lab{font-size:10.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--ink-faint);font-weight:600}
+.kpi .val{font-family:var(--mono);font-size:34px;font-weight:600;color:var(--ink);line-height:1.05;margin-top:8px;font-variant-numeric:tabular-nums}
+.kpi .meta{font-size:11.5px;color:var(--ink-soft);margin-top:3px;min-height:15px}
+
+.panel{background:var(--bg);border:1px solid var(--line);border-radius:var(--rad);box-shadow:var(--shadow-sm)}
+.panel .ph{padding:14px 18px;border-bottom:1px solid var(--line-soft);display:flex;align-items:center;justify-content:space-between;gap:10px}
+.panel .ph h2{font-size:14px}
+.panel .ph .hint{font-size:11.5px;color:var(--ink-faint);font-weight:500}
+.panel .pb{padding:16px 18px}
+.cols{display:grid;gap:16px;grid-template-columns:repeat(12,1fr)}
+.c12{grid-column:span 12}.c8{grid-column:span 8}.c6{grid-column:span 6}.c4{grid-column:span 4}
+.chart-wrap{position:relative;height:260px}
+.chart-wrap.sm{height:220px}
+
+/* ---------- progress ---------- */
+.prog-list{display:flex;flex-direction:column;gap:11px}
+.prog-row{display:grid;grid-template-columns:150px 1fr 78px;align-items:center;gap:12px}
+.prog-row .name{font-size:12.5px;font-weight:600;color:var(--ink)}
+.prog-bar{height:9px;background:var(--panel-2);border-radius:6px;overflow:hidden}
+.prog-bar i{display:block;height:100%;background:var(--ok);border-radius:6px;transition:width .5s ease}
+.prog-row .num{font-size:12px;color:var(--ink-soft);text-align:right;font-variant-numeric:tabular-nums}
+.prog-row .num b{color:var(--ink);font-weight:700}
+
+/* ---------- forms ---------- */
+.form{display:grid;gap:18px}
+.fgrid{display:grid;gap:13px 16px;grid-template-columns:repeat(auto-fit,minmax(170px,1fr))}
+.field{display:flex;flex-direction:column;gap:5px}
+.field label{font-size:11.5px;font-weight:600;color:var(--ink-soft);letter-spacing:.01em}
+.field input,.field select,.field textarea{
+  font-family:inherit;font-size:13.5px;color:var(--ink);background:var(--bg);
+  border:1px solid var(--line);border-radius:8px;padding:9px 11px;width:100%;transition:.12s;
+}
+.field input:focus,.field select:focus,.field textarea:focus{
+  outline:none;border-color:var(--navy-3);box-shadow:0 0 0 3px rgba(31,82,153,.12)
+}
+.field.req label::after{content:" *";color:var(--bad)}
+.fs{border:1px solid var(--line-soft);border-radius:var(--rad);padding:15px 16px;background:#fcfdff}
+.fs > .fs-h{display:flex;align-items:center;gap:8px;margin:-2px 0 12px}
+.fs > .fs-h .dot{width:8px;height:8px;border-radius:50%;background:var(--c,var(--navy))}
+.fs > .fs-h h3{font-size:12.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-soft)}
+.chips{display:flex;flex-wrap:wrap;gap:7px}
+.chip{
+  border:1px solid var(--line);background:var(--bg);color:var(--ink-soft);
+  padding:7px 13px;border-radius:20px;font-size:12.5px;font-weight:600;cursor:pointer;
+  user-select:none;transition:.1s;
+}
+.chip:hover{border-color:var(--navy-3)}
+.chip.on{background:var(--navy);border-color:var(--navy);color:#fff}
+.chip.on.green{background:var(--ok);border-color:var(--ok)}
+.form-actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.form-actions .spacer{flex:1}
+
+/* ---------- table ---------- */
+.tbl-tools{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:12px}
+.search{position:relative;flex:1;min-width:200px;max-width:340px}
+.search input{padding-left:34px}
+.search svg{position:absolute;left:11px;top:50%;transform:translateY(-50%);width:15px;height:15px;stroke:var(--ink-faint);stroke-width:2;fill:none}
+.tbl-scroll{overflow:auto;border:1px solid var(--line);border-radius:var(--rad);background:var(--bg)}
+table{border-collapse:collapse;width:100%;font-size:12.5px}
+thead th{
+  background:var(--navy);color:#dce6f5;text-align:left;padding:10px 12px;font-weight:600;
+  white-space:nowrap;position:sticky;top:0;font-size:11.5px;letter-spacing:.02em;
+}
+tbody td{padding:9px 12px;border-bottom:1px solid var(--line-soft);white-space:nowrap}
+tbody tr{cursor:pointer;transition:background .1s}
+tbody tr:hover{background:var(--panel)}
+tbody tr:nth-child(even){background:#fbfcfe}
+tbody tr:nth-child(even):hover{background:var(--panel)}
+.pill{display:inline-block;padding:2px 8px;border-radius:11px;font-size:11px;font-weight:600}
+.pill.flag{background:var(--ok-bg);color:var(--ok)}
+.pill.role{background:#eef3fb;color:var(--navy-2)}
+.pill.fail{background:#fbe9e7;color:var(--bad)}
+.pill.partial{background:#fdf3e3;color:var(--warn)}
+.del-x{color:var(--ink-faint);font-weight:700;padding:2px 7px;border-radius:6px}
+.del-x:hover{background:#fbe9e7;color:var(--bad)}
+
+/* analytics tables compact */
+.mini th{background:var(--panel-2);color:var(--ink-soft);font-size:11px}
+.mini td{font-size:12.5px}
+.mini tbody tr{cursor:default}
+
+/* settings list */
+.tag-list{display:flex;flex-wrap:wrap;gap:8px;margin-top:4px}
+.tag{display:inline-flex;align-items:center;gap:7px;background:var(--panel);border:1px solid var(--line);
+  border-radius:18px;padding:5px 6px 5px 12px;font-size:12.5px;font-weight:500}
+.tag button{border:0;background:transparent;color:var(--ink-faint);cursor:pointer;font-size:15px;line-height:1;padding:0 4px;border-radius:50%}
+.tag button:hover{color:var(--bad)}
+.inline-add{display:flex;gap:8px;margin-top:10px;max-width:360px}
+
+/* notices */
+.notice{display:flex;gap:11px;align-items:flex-start;background:#fff8ec;border:1px solid #f0dcad;
+  color:#7a5a12;border-radius:var(--rad);padding:12px 15px;font-size:12.5px;line-height:1.5}
+.notice svg{flex:0 0 17px;width:17px;height:17px;stroke:#b7791f;stroke-width:2;fill:none;margin-top:1px}
+.empty{text-align:center;padding:50px 20px;color:var(--ink-soft)}
+.empty svg{width:42px;height:42px;stroke:var(--ink-faint);stroke-width:1.5;fill:none;margin-bottom:10px}
+.empty h3{font-size:16px;color:var(--ink);margin-bottom:6px}
+
+/* toast */
+#toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%) translateY(20px);
+  background:var(--ink);color:#fff;padding:11px 18px;border-radius:9px;font-size:13px;font-weight:500;
+  opacity:0;pointer-events:none;transition:.25s;z-index:50;box-shadow:0 6px 24px rgba(0,0,0,.25)}
+#toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+
+.section-label{font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-faint);
+  font-weight:700;margin:24px 0 10px}
+.section-label:first-child{margin-top:0}
+
+/* ---------- responsive ---------- */
+@media(max-width:980px){
+  .c8,.c6,.c4{grid-column:span 12}
+}
+@media(max-width:860px){
+  .app{flex-direction:column}
+  .rail{width:100%;height:auto;position:fixed;bottom:0;top:auto;flex-direction:row;z-index:30;
+    border-top:1px solid rgba(255,255,255,.1)}
+  .brand,.rail .foot{display:none}
+  .nav{flex-direction:row;padding:6px 4px;gap:0;justify-content:space-around;overflow-x:auto}
+  .nav button{flex-direction:column;gap:3px;padding:7px 6px;font-size:9.5px;border-radius:8px;min-width:60px;letter-spacing:0}
+  .nav button span{font-size:9.5px}
+  .nav svg{width:20px;height:20px}
+  .main{margin-bottom:64px}
+  .topbar{padding:13px 16px}
+  .view{padding:16px 14px 30px}
+  .topbar .acts .lbl{display:none}
+  .prog-row{grid-template-columns:120px 1fr 64px}
+}
+@media(prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<div class="app">
+  <aside class="rail">
+    <div class="brand">
+      <div class="logo">
+        <svg class="pulse" viewBox="0 0 40 40" fill="none"><path d="M2 22h7l3-9 5 17 5-26 4 18 3-8h4" stroke="#5aa9ff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <div><b>Cath Log</b><div class="sub">Fellowship Case Log</div></div>
+      </div>
+    </div>
+    <nav class="nav" id="nav">
+      <button data-view="dashboard" class="active"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="9"/><rect x="14" y="3" width="7" height="5"/><rect x="14" y="12" width="7" height="9"/><rect x="3" y="16" width="7" height="5"/></svg><span>Dashboard</span></button>
+      <button data-view="entry"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg><span>Log Case</span></button>
+      <button data-view="cases"><svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16"/></svg><span>Case Log</span></button>
+      <button data-view="board"><svg viewBox="0 0 24 24"><path d="M9 11l3 3 8-8"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg><span>Board Log</span></button>
+      <button data-view="analytics"><svg viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="M7 15l4-4 3 3 5-6"/></svg><span>Analytics</span></button>
+      <button data-view="data"><svg viewBox="0 0 24 24"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v6c0 1.7 3.6 3 8 3s8-1.3 8-3V5"/><path d="M4 11v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6"/></svg><span>Data</span></button>
+    </nav>
+    <div class="foot">Stored privately in this browser.<br>Export regularly to back up.</div>
+  </aside>
+
+  <div class="main">
+    <div class="topbar">
+      <div class="ttl"><h1 id="vTitle">Dashboard</h1><p id="vSub">Live overview of your case volume and progress</p></div>
+      <div class="acts" id="vActs"></div>
+    </div>
+
+    <!-- DASHBOARD -->
+    <section class="view" id="view-dashboard"></section>
+    <!-- ENTRY -->
+    <section class="view hidden" id="view-entry"></section>
+    <!-- CASES -->
+    <section class="view hidden" id="view-cases"></section>
+    <!-- BOARD -->
+    <section class="view hidden" id="view-board"></section>
+    <!-- ANALYTICS -->
+    <section class="view hidden" id="view-analytics"></section>
+    <!-- DATA -->
+    <section class="view hidden" id="view-data"></section>
+  </div>
+</div>
+<div id="toast"></div>
+
+<script>
+/* =================================================================
+   Cath Log — single-file IC fellowship case log (localStorage)
+   ================================================================= */
+"use strict";
+const $  = (s,r=document)=>r.querySelector(s);
+const $$ = (s,r=document)=>[...r.querySelectorAll(s)];
+const el = (t,a={},...kids)=>{const n=document.createElement(t);
+  for(const k in a){ if(k==="class")n.className=a[k]; else if(k==="html")n.innerHTML=a[k];
+    else if(k.startsWith("on"))n.addEventListener(k.slice(2),a[k]); else if(a[k]!=null)n.setAttribute(k,a[k]); }
+  kids.flat().forEach(c=>n.append(c?.nodeType?c:document.createTextNode(c))); return n;};
+
+/* ---------- reference data ---------- */
+const PROC=["Diagnostic Cath","PCI","CTO PCI","STEMI PCI","NSTEMI PCI","Left Main PCI","Bifurcation PCI",
+  "Shock PCI","Impella","IABP","Rotational Atherectomy","Orbital Atherectomy","IVL","Laser","CTO Retrograde",
+  "CTO Antegrade","RHC","Structural","TAVR","MitraClip","PFO Closure","Peripheral","EVAR","Other"];
+const PCI_TYPES=new Set(["PCI","CTO PCI","STEMI PCI","NSTEMI PCI","Left Main PCI","Bifurcation PCI","Shock PCI"]);
+const STRUCT_TYPES=new Set(["Structural","TAVR","MitraClip","PFO Closure"]);
+const ROLES=["Primary Operator","First Assist","Second Assist","Observation"];
+const OUTCOMES=["Successful","Partial","Failed"];
+const ACCESS=["Radial - Right","Radial - Left","Femoral - Right","Femoral - Left","Ulnar","Brachial"];
+const ANATOMY=[["lm","Left Main"],["lad","LAD"],["lcx","LCX"],["rca","RCA"],["ramus","Ramus"],["graft","Graft PCI"]];
+const COMPLEX=[["cto","CTO"],["calcified","Calcified"],["bifurcation","Bifurcation"],["ostial","Ostial"],
+  ["shock","Cardiogenic Shock"],["stemi","STEMI"],["mech","Mech Support"],["mvd","Multivessel PCI"]];
+const DEVICES=[["ivus","IVUS"],["oct","OCT"],["ffr","FFR"],["ifr","iFR"],["impella","Impella"],["iabp","IABP"],
+  ["ivl","IVL"],["rota","Rotablator"],["orbital","Orbital Atherectomy"],["laser","Laser"],
+  ["guideExt","Guide Extension"],["covered","Covered Stent"],["dcb","DCB"]];
+const BOARD=[
+  {key:"dx",   name:"Diagnostic Caths", def:c=>c.procedure==="Diagnostic Cath", target:100},
+  {key:"pci",  name:"PCI (Total)",      def:c=>isPCI(c),                         target:250},
+  {key:"stemi",name:"STEMI PCI",        def:c=>isPCI(c)&&c.complex.stemi,        target:25},
+  {key:"cto",  name:"CTO PCI",          def:c=>isPCI(c)&&c.complex.cto,          target:20},
+  {key:"lm",   name:"Left Main PCI",    def:c=>c.procedure==="Left Main PCI",    target:15},
+  {key:"bif",  name:"Bifurcation PCI",  def:c=>isPCI(c)&&c.complex.bifurcation,  target:25},
+  {key:"shock",name:"Shock Cases",      def:c=>c.complex.shock,                  target:15},
+  {key:"rhc",  name:"RHC",              def:c=>c.procedure==="RHC",              target:50},
+  {key:"struct",name:"Structural Cases",def:c=>isStructural(c),                  target:30},
+];
+const C={total:"#0b2d5c",pci:"#163e73",cto:"#5b21b6",stemi:"#b3261e",shock:"#c2410c",
+  ivus:"#0e7c86",ffr:"#0f766e",impella:"#9a6700",struct:"#1f5299"};
+const PALETTE=["#0b2d5c","#1f5299","#0e7c86","#5b21b6","#c2410c","#9a6700","#b3261e","#1e7b45","#7a8aa3","#163e73","#0f766e","#475569","#a16207"];
+
+/* ---------- state / storage ---------- */
+const LS={cases:"icfl.cases.v1",targets:"icfl.targets.v1",lists:"icfl.lists.v1"};
+let STATE={cases:[],targets:{},lists:{attendings:[],hospitals:[]}};
+
+function load(){
+  try{STATE.cases=JSON.parse(localStorage.getItem(LS.cases))||[]}catch(e){STATE.cases=[]}
+  try{STATE.targets=JSON.parse(localStorage.getItem(LS.targets))||{}}catch(e){STATE.targets={}}
+  try{STATE.lists=JSON.parse(localStorage.getItem(LS.lists))||null}catch(e){STATE.lists=null}
+  if(!STATE.lists) STATE.lists={
+    attendings:["Dr. Reyes","Dr. Patel","Dr. Nguyen","Dr. Kim","Dr. Alvarez"],
+    hospitals:["University Main","VA Medical Center","County General","Heart Institute"]};
+  BOARD.forEach(b=>{ if(STATE.targets[b.key]==null) STATE.targets[b.key]=b.target; });
+}
+function save(){
+  localStorage.setItem(LS.cases,JSON.stringify(STATE.cases));
+  localStorage.setItem(LS.targets,JSON.stringify(STATE.targets));
+  localStorage.setItem(LS.lists,JSON.stringify(STATE.lists));
+}
+const isPCI=c=>PCI_TYPES.has(c.procedure);
+const isStructural=c=>STRUCT_TYPES.has(c.procedure);
+const monthKey=d=>d?d.slice(0,7):"";
+const uid=()=>(crypto&&crypto.randomUUID?crypto.randomUUID():"id-"+Date.now().toString(36)+Math.random().toString(36).slice(2,9));
+function toast(m){const t=$("#toast");t.textContent=m;t.classList.add("show");clearTimeout(t._t);t._t=setTimeout(()=>t.classList.remove("show"),2200);}
+
+/* ---------- new/blank case ---------- */
+function blankCase(){
+  const an={},cx={},dv={};
+  ANATOMY.forEach(([k])=>an[k]=false); COMPLEX.forEach(([k])=>cx[k]=false); DEVICES.forEach(([k])=>dv[k]=false);
+  return {id:uid(), date:new Date().toISOString().slice(0,10),
+    hospital:STATE.lists.hospitals[0]||"", mrn:"", initials:"", age:"", sex:"",
+    procedure:"", role:"Primary Operator", attending:STATE.lists.attendings[0]||"", outcome:"Successful",
+    anat:an, complex:cx, dev:dv,
+    stents:"", length:"", dia:"", access:"Radial - Right", contrast:"", fluoro:"", dose:"", tags:""};
+}
+
+/* =================================================================
+   VIEW ROUTING
+   ================================================================= */
+const VIEWS={
+  dashboard:{title:"Dashboard",sub:"Live overview of your case volume and progress",render:renderDashboard,acts:dashActs},
+  entry:{title:"Log a Case",sub:"Capture a case in under 30 seconds",render:renderEntry,acts:()=>[]},
+  cases:{title:"Case Log",sub:"Every procedure, searchable and editable",render:renderCases,acts:casesActs},
+  board:{title:"Credentialing & Board Log",sub:"Progress toward your program's case requirements",render:renderBoard,acts:()=>[]},
+  analytics:{title:"Analytics",sub:"Devices, attendings, and monthly activity",render:renderAnalytics,acts:()=>[]},
+  data:{title:"Data & Settings",sub:"Back up, restore, and manage your lists",render:renderData,acts:()=>[]},
+};
+let current="dashboard", editingId=null;
+function go(name){
+  current=name;
+  $$(".nav button").forEach(b=>b.classList.toggle("active",b.dataset.view===name));
+  $$(".view").forEach(v=>v.classList.add("hidden"));
+  $("#view-"+name).classList.remove("hidden");
+  $("#vTitle").textContent=VIEWS[name].title; $("#vSub").textContent=VIEWS[name].sub;
+  const acts=$("#vActs"); acts.innerHTML=""; (VIEWS[name].acts()||[]).forEach(a=>acts.append(a));
+  VIEWS[name].render();
+  document.querySelector(".main").scrollTo?.(0,0); window.scrollTo(0,0);
+}
+$("#nav").addEventListener("click",e=>{const b=e.target.closest("button");if(b)go(b.dataset.view);});
+
+/* =================================================================
+   DASHBOARD
+   ================================================================= */
+let CHARTS={};
+function destroyCharts(){Object.values(CHARTS).forEach(c=>{try{c.destroy()}catch(e){}});CHARTS={};}
+function dashActs(){
+  return [ el("button",{class:"btn primary",onclick:()=>go("entry")},icon("plus"),el("span",{class:"lbl"},"Log case")) ];
+}
+function renderDashboard(){
+  destroyCharts();
+  const root=$("#view-dashboard"); root.innerHTML="";
+  const cs=STATE.cases;
+  if(!cs.length){ root.append(emptyState()); return; }
+
+  const cnt=(f)=>cs.filter(f).length;
+  const kpis=[
+    ["Total Cases", cs.length, "total", ""],
+    ["PCI", cnt(isPCI), "pci", pct(cnt(isPCI),cs.length)],
+    ["CTO", cnt(c=>c.complex.cto), "cto", pct(cnt(c=>c.complex.cto),cs.length)],
+    ["STEMI", cnt(c=>c.complex.stemi), "stemi", pct(cnt(c=>c.complex.stemi),cs.length)],
+    ["Shock", cnt(c=>c.complex.shock), "shock", pct(cnt(c=>c.complex.shock),cs.length)],
+    ["IVUS", cnt(c=>c.dev.ivus), "ivus", pct(cnt(c=>c.dev.ivus),cs.length)],
+    ["FFR / iFR", cnt(c=>c.dev.ffr||c.dev.ifr), "ffr", pct(cnt(c=>c.dev.ffr||c.dev.ifr),cs.length)],
+    ["Impella", cnt(c=>c.dev.impella), "impella", ""],
+    ["Structural", cnt(isStructural), "struct", pct(cnt(isStructural),cs.length)],
+  ];
+  const kgrid=el("div",{class:"grid kpis"});
+  kpis.forEach(([lab,val,key,meta])=>{
+    kgrid.append(el("div",{class:"kpi",style:`--c:${C[key]}`},
+      el("div",{class:"lab"},lab), el("div",{class:"val"},String(val)),
+      el("div",{class:"meta"}, meta?`${meta} of cases`:" ")));
+  });
+  root.append(kgrid);
+
+  // charts row 1
+  const r1=el("div",{class:"cols",style:"margin-top:16px"});
+  r1.append(panelChart("c8","Monthly Case Volume","",`<div class="chart-wrap"><canvas id="ch-month"></canvas></div>`));
+  r1.append(panelChart("c4","Procedure Mix","",`<div class="chart-wrap"><canvas id="ch-mix"></canvas></div>`));
+  root.append(r1);
+  const r2=el("div",{class:"cols",style:"margin-top:16px"});
+  r2.append(panelChart("c4","Vessel Distribution","",`<div class="chart-wrap sm"><canvas id="ch-vessel"></canvas></div>`));
+  r2.append(panelChart("c4","Device Utilization","",`<div class="chart-wrap sm"><canvas id="ch-dev"></canvas></div>`));
+  r2.append(panelChart("c4","Cases by Hospital","",`<div class="chart-wrap sm"><canvas id="ch-hosp"></canvas></div>`));
+  root.append(r2);
+  const r3=el("div",{class:"cols",style:"margin-top:16px"});
+  r3.append(panelChart("c6","Cases by Attending","",`<div class="chart-wrap sm"><canvas id="ch-att"></canvas></div>`));
+  // board snapshot
+  const bp=el("div",{class:"panel c6"});
+  bp.append(el("div",{class:"ph"},el("h2",{},"Board Requirement Progress"),el("span",{class:"hint"},"editable on Board Log")));
+  const pb=el("div",{class:"pb"}); pb.append(boardProgressList(true)); bp.append(pb);
+  r3.append(bp);
+  root.append(r3);
+
+  drawCharts(cs);
+}
+function panelChart(span,title,hint,inner){
+  const p=el("div",{class:"panel "+span});
+  p.append(el("div",{class:"ph"},el("h2",{},title), hint?el("span",{class:"hint"},hint):""));
+  p.append(el("div",{class:"pb",html:inner}));
+  return p;
+}
+function emptyState(){
+  return el("div",{class:"panel"}, el("div",{class:"empty"},
+    el("div",{html:'<svg viewBox="0 0 24 24"><path d="M2 12h4l2-7 4 14 3-9 2 4h5"/></svg>'}),
+    el("h3",{},"No cases logged yet"),
+    el("p",{},"Your dashboard lights up as soon as you log a case. Start with one now, or load sample data to explore."),
+    el("div",{style:"display:flex;gap:10px;justify-content:center;margin-top:14px;flex-wrap:wrap"},
+      el("button",{class:"btn primary",onclick:()=>go("entry")},icon("plus"),"Log first case"),
+      el("button",{class:"btn",onclick:loadSample},"Load sample data"))));
+}
+function pct(n,d){return d?Math.round(n/d*100)+"%":"";}
+
+/* ---------- chart builders ---------- */
+function baseOpts(extra={}){return Object.assign({responsive:true,maintainAspectRatio:false,
+  plugins:{legend:{display:false}},font:{family:"Inter"}},extra);}
+function drawCharts(cs){
+  Chart.defaults.font.family="Inter"; Chart.defaults.color="#5c6b80"; Chart.defaults.font.size=11;
+  // monthly (last 12 months by present months in data)
+  const months=lastMonths(12);
+  const totals=months.map(m=>cs.filter(c=>monthKey(c.date)===m).length);
+  CHARTS.month=new Chart($("#ch-month"),{type:"line",
+    data:{labels:months.map(fmtMonth),datasets:[{data:totals,borderColor:C.total,backgroundColor:"rgba(11,45,92,.08)",
+      fill:true,tension:.32,pointRadius:3,pointBackgroundColor:C.total,borderWidth:2.4}]},
+    options:baseOpts({scales:{y:{beginAtZero:true,ticks:{precision:0},grid:{color:"#eef2f7"}},x:{grid:{display:false}}}})});
+  // procedure mix
+  const procCounts=countBy(cs,c=>c.procedure).filter(x=>x[1]>0).sort((a,b)=>b[1]-a[1]);
+  CHARTS.mix=new Chart($("#ch-mix"),{type:"doughnut",
+    data:{labels:procCounts.map(x=>x[0]),datasets:[{data:procCounts.map(x=>x[1]),
+      backgroundColor:procCounts.map((_,i)=>PALETTE[i%PALETTE.length]),borderWidth:2,borderColor:"#fff"}]},
+    options:baseOpts({cutout:"58%",plugins:{legend:{display:true,position:"right",labels:{boxWidth:9,font:{size:10},padding:7}}}})});
+  // vessel
+  const ves=ANATOMY.map(([k,n])=>[n,cs.filter(c=>c.anat[k]).length]);
+  CHARTS.vessel=barChart("ch-vessel",ves.map(x=>x[0]),ves.map(x=>x[1]),C.pci);
+  // devices (top utilized)
+  const dev=DEVICES.map(([k,n])=>[n,cs.filter(c=>c.dev[k]).length]).filter(x=>x[1]>0).sort((a,b)=>b[1]-a[1]).slice(0,8);
+  CHARTS.dev=barChart("ch-dev",dev.map(x=>x[0]),dev.map(x=>x[1]),C.ivus);
+  // hospital
+  const hosp=countBy(cs,c=>c.hospital).filter(x=>x[1]>0);
+  CHARTS.hosp=new Chart($("#ch-hosp"),{type:"doughnut",
+    data:{labels:hosp.map(x=>x[0]),datasets:[{data:hosp.map(x=>x[1]),
+      backgroundColor:hosp.map((_,i)=>PALETTE[i%PALETTE.length]),borderWidth:2,borderColor:"#fff"}]},
+    options:baseOpts({cutout:"58%",plugins:{legend:{display:true,position:"bottom",labels:{boxWidth:9,font:{size:10},padding:7}}}})});
+  // attending
+  const att=countBy(cs,c=>c.attending).filter(x=>x[1]>0).sort((a,b)=>b[1]-a[1]);
+  CHARTS.att=barChart("ch-att",att.map(x=>x[0]),att.map(x=>x[1]),C.struct,true);
+}
+function barChart(id,labels,data,color,horizontal){
+  return new Chart($("#"+id),{type:"bar",
+    data:{labels,datasets:[{data,backgroundColor:color,borderRadius:4,maxBarThickness:34}]},
+    options:baseOpts({indexAxis:horizontal?"y":"x",
+      scales:{x:{grid:{display:!horizontal?false:true,color:"#eef2f7"},ticks:{precision:0,autoSkip:false,font:{size:10}}},
+              y:{beginAtZero:true,grid:{color:"#eef2f7"},ticks:{precision:0,font:{size:10}}}}})});
+}
+function countBy(arr,fn){const m=new Map();arr.forEach(x=>{const k=fn(x)||"—";m.set(k,(m.get(k)||0)+1)});return [...m.entries()];}
+function lastMonths(n){const out=[];const d=new Date();d.setDate(1);
+  for(let i=n-1;i>=0;i--){const x=new Date(d.getFullYear(),d.getMonth()-i,1);out.push(x.toISOString().slice(0,7));}return out;}
+function fmtMonth(m){const[y,mo]=m.split("-");return new Date(y,mo-1,1).toLocaleDateString("en",{month:"short"})+" "+y.slice(2);}
+
+/* ---------- board progress list ---------- */
+function boardProgressList(compact){
+  const wrap=el("div",{class:"prog-list"});
+  BOARD.forEach(b=>{
+    const cur=STATE.cases.filter(b.def).length, tgt=STATE.targets[b.key]||1;
+    const p=Math.min(cur/tgt,1);
+    const color=p>=1?C.struct:(p>=.5?"#1e7b45":(p>0?"#b7791f":"#cbd5e1"));
+    wrap.append(el("div",{class:"prog-row"},
+      el("div",{class:"name"},b.name),
+      el("div",{class:"prog-bar"},el("i",{style:`width:${p*100}%;background:${color}`})),
+      el("div",{class:"num"},el("b",{},String(cur)),"/"+tgt)));
+  });
+  return wrap;
+}
+
+/* =================================================================
+   ENTRY / EDIT FORM
+   ================================================================= */
+function renderEntry(){
+  const root=$("#view-entry"); root.innerHTML="";
+  const c = editingId ? structuredClone(STATE.cases.find(x=>x.id===editingId)) : blankCase();
+  const editing=!!editingId;
+  $("#vTitle").textContent = editing?"Edit Case":"Log a Case";
+
+  const form=el("div",{class:"form"});
+
+  // tap guidance
+  form.append(el("div",{class:"notice"},
+    el("div",{html:'<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16h.01"/></svg>'}),
+    el("div",{},el("b",{},editing?"Editing an existing case. ":"Fast path: "),
+      "fill the five starred fields, tap any vessels/devices that apply, Save. Everything else is optional.")));
+
+  // CASE INFO
+  const info=fs("Case information","#0b2d5c");
+  const ig=el("div",{class:"fgrid"});
+  ig.append(fInput("Date",c,"date","date",true));
+  ig.append(fSelect("Hospital",c,"hospital",STATE.lists.hospitals,false));
+  ig.append(fSelect("Procedure",c,"procedure",PROC,true,"Select…"));
+  ig.append(fSelect("Training role",c,"role",ROLES,true));
+  ig.append(fSelect("Attending",c,"attending",STATE.lists.attendings,true));
+  ig.append(fSelect("Outcome",c,"outcome",OUTCOMES,true));
+  ig.append(fInput("MRN (optional)",c,"mrn","text"));
+  ig.append(fInput("Patient initials",c,"initials","text"));
+  ig.append(fInput("Age",c,"age","number"));
+  ig.append(fSelect("Sex",c,"sex",["M","F"],false,"—"));
+  info.append(ig); form.append(info);
+
+  // ANATOMY + COMPLEXITY
+  const flagsRow=el("div",{class:"cols"});
+  const an=fs("Coronary anatomy","#163e73"); an.classList.add("c6");
+  an.append(chipGroup(c.anat,ANATOMY)); flagsRow.append(an);
+  const cx=fs("Complexity","#5b21b6"); cx.classList.add("c6");
+  cx.append(chipGroup(c.complex,COMPLEX)); flagsRow.append(cx);
+  form.append(flagsRow);
+
+  // DEVICES
+  const dev=fs("Devices & imaging","#0e7c86");
+  dev.append(chipGroup(c.dev,DEVICES,"green")); form.append(dev);
+
+  // PCI DETAIL
+  const pci=fs("PCI detail (optional)","#9a6700");
+  const pg=el("div",{class:"fgrid"});
+  pg.append(fInput("Stent count",c,"stents","number"));
+  pg.append(fInput("Total stent length (mm)",c,"length","number"));
+  pg.append(fInput("Largest stent dia (mm)",c,"dia","number"));
+  pg.append(fSelect("Access site",c,"access",ACCESS,false));
+  pg.append(fInput("Contrast (mL)",c,"contrast","number"));
+  pg.append(fInput("Fluoro time (min)",c,"fluoro","number"));
+  pg.append(fInput("Radiation dose (mGy)",c,"dose","number"));
+  pci.append(pg); form.append(pci);
+
+  // TAGS
+  const tg=fs("Research tags","#475569");
+  const tgg=el("div",{class:"field"});
+  tgg.append(el("label",{},"Free text — e.g. CTO; Left Main; STEMI"));
+  const ti=el("input",{type:"text",value:c.tags||"",placeholder:"Comma-separated tags"});
+  ti.addEventListener("input",()=>c.tags=ti.value); tgg.append(ti);
+  tg.append(tgg); form.append(tg);
+
+  // ACTIONS
+  const acts=el("div",{class:"form-actions"});
+  acts.append(el("button",{class:"btn primary",onclick:()=>saveCase(c,editing)},icon("check"),editing?"Save changes":"Save case"));
+  acts.append(el("button",{class:"btn ghost",onclick:()=>{editingId=null;go(editing?"cases":"dashboard");}},"Cancel"));
+  acts.append(el("span",{class:"spacer"}));
+  if(editing) acts.append(el("button",{class:"btn danger",onclick:()=>{deleteCase(editingId);editingId=null;go("cases");}},icon("trash"),"Delete"));
+  form.append(acts);
+
+  root.append(form);
+}
+function fs(title,color){
+  const f=el("div",{class:"fs",style:`--c:${color}`});
+  f.append(el("div",{class:"fs-h"},el("span",{class:"dot"}),el("h3",{},title)));
+  return f;
+}
+function fInput(label,obj,key,type,req){
+  const f=el("div",{class:"field"+(req?" req":"")});
+  f.append(el("label",{},label));
+  const i=el("input",{type,value:obj[key]??""});
+  i.addEventListener("input",()=>obj[key]=i.value);
+  f.append(i); return f;
+}
+function fSelect(label,obj,key,opts,req,placeholder){
+  const f=el("div",{class:"field"+(req?" req":"")});
+  f.append(el("label",{},label));
+  const s=el("select");
+  if(placeholder!=null) s.append(el("option",{value:""},placeholder));
+  opts.forEach(o=>s.append(el("option",{value:o,...(obj[key]===o?{selected:""}:{})},o)));
+  if(obj[key]) s.value=obj[key];
+  s.addEventListener("change",()=>obj[key]=s.value);
+  f.append(s); return f;
+}
+function chipGroup(obj,defs,variant){
+  const g=el("div",{class:"chips"});
+  defs.forEach(([k,name])=>{
+    const ch=el("button",{class:"chip"+(obj[k]?" on":"")+(variant?" "+variant:""),type:"button"},name);
+    if(obj[k]) ch.classList.add(variant||"on");
+    ch.addEventListener("click",()=>{obj[k]=!obj[k];ch.classList.toggle("on",obj[k]);});
+    g.append(ch);
+  });
+  return g;
+}
+function saveCase(c,editing){
+  if(!c.procedure){toast("Pick a procedure first");return;}
+  if(!c.date){toast("Add a date");return;}
+  // normalise numbers
+  ["age","stents","length","dia","contrast","fluoro","dose"].forEach(k=>{ if(c[k]==="")c[k]=""; });
+  if(editing){ const i=STATE.cases.findIndex(x=>x.id===c.id); STATE.cases[i]=c; }
+  else { STATE.cases.push(c); }
+  save(); editingId=null; toast(editing?"Case updated":"Case logged");
+  go(editing?"cases":"dashboard");
+}
+function deleteCase(id){STATE.cases=STATE.cases.filter(c=>c.id!==id);save();toast("Case deleted");}
+
+/* =================================================================
+   CASE LOG TABLE
+   ================================================================= */
+let caseFilter="";
+function casesActs(){
+  return [ el("button",{class:"btn primary",onclick:()=>{editingId=null;go("entry");}},icon("plus"),el("span",{class:"lbl"},"Log case")) ];
+}
+function renderCases(){
+  const root=$("#view-cases"); root.innerHTML="";
+  if(!STATE.cases.length){ root.append(emptyState()); return; }
+  const tools=el("div",{class:"tbl-tools"});
+  const search=el("div",{class:"search"});
+  search.innerHTML='<svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/></svg>';
+  const si=el("input",{type:"text",placeholder:"Search procedure, attending, tag, hospital…",value:caseFilter});
+  si.addEventListener("input",()=>{caseFilter=si.value;drawTable();});
+  search.append(si); tools.append(search);
+  tools.append(el("span",{style:"flex:1"}));
+  tools.append(el("span",{style:"font-size:12px;color:var(--ink-soft)"},`${STATE.cases.length} cases`));
+  root.append(tools);
+  const host=el("div",{id:"tblHost"}); root.append(host);
+  drawTable();
+}
+function drawTable(){
+  const host=$("#tblHost"); if(!host)return; host.innerHTML="";
+  const q=caseFilter.trim().toLowerCase();
+  let rows=[...STATE.cases].sort((a,b)=>(b.date||"").localeCompare(a.date||""));
+  if(q) rows=rows.filter(c=>[c.procedure,c.attending,c.hospital,c.tags,c.outcome,c.role].join(" ").toLowerCase().includes(q));
+  if(!rows.length){host.append(el("div",{class:"panel"},el("div",{class:"empty"},el("h3",{},"No matches"),el("p",{},"Try a different search."))));return;}
+  const scroll=el("div",{class:"tbl-scroll"});
+  const t=el("table");
+  t.innerHTML=`<thead><tr>
+    <th>Date</th><th>Procedure</th><th>Role</th><th>Attending</th><th>Hospital</th>
+    <th>Vessels</th><th>Devices</th><th>Outcome</th><th>Tags</th><th></th></tr></thead>`;
+  const tb=el("tbody");
+  rows.forEach(c=>{
+    const ves=ANATOMY.filter(([k])=>c.anat[k]).map(([,n])=>n).join(", ")||"—";
+    const dvs=DEVICES.filter(([k])=>c.dev[k]).map(([,n])=>n).join(", ")||"—";
+    const oc=c.outcome==="Failed"?"fail":c.outcome==="Partial"?"partial":"flag";
+    const tr=el("tr",{onclick:()=>{editingId=c.id;go("entry");}},
+      el("td",{},c.date||""),
+      el("td",{},el("b",{},c.procedure||"")),
+      el("td",{},el("span",{class:"pill role"},c.role||"")),
+      el("td",{},c.attending||""),
+      el("td",{},c.hospital||""),
+      el("td",{style:"white-space:normal;max-width:160px"},ves),
+      el("td",{style:"white-space:normal;max-width:170px"},dvs),
+      el("td",{},el("span",{class:"pill "+oc},c.outcome||"")),
+      el("td",{style:"white-space:normal;max-width:140px;color:var(--ink-soft)"},c.tags||""),
+      el("td",{},el("span",{class:"del-x",title:"Delete",onclick:(e)=>{e.stopPropagation();if(confirm("Delete this case?")){deleteCase(c.id);drawTable();}}},"✕")));
+    tb.append(tr);
+  });
+  t.append(tb); scroll.append(t); host.append(scroll);
+}
+
+/* =================================================================
+   BOARD LOG (editable targets)
+   ================================================================= */
+function renderBoard(){
+  const root=$("#view-board"); root.innerHTML="";
+  if(!STATE.cases.length){ root.append(emptyState()); return; }
+  const p=el("div",{class:"panel"});
+  p.append(el("div",{class:"ph"},el("h2",{},"Case requirement progress"),
+    el("span",{class:"hint"},"Edit any target to match your program")));
+  const pb=el("div",{class:"pb"});
+  const head=el("div",{class:"prog-list"});
+  BOARD.forEach(b=>{
+    const cur=STATE.cases.filter(b.def).length, tgt=STATE.targets[b.key]||1;
+    const ratio=Math.min(cur/tgt,1);
+    const color=ratio>=1?C.struct:(ratio>=.5?"#1e7b45":(ratio>0?"#b7791f":"#cbd5e1"));
+    const row=el("div",{class:"prog-row",style:"grid-template-columns:160px 1fr 56px 86px"});
+    row.append(el("div",{class:"name"},b.name));
+    row.append(el("div",{class:"prog-bar"},el("i",{style:`width:${ratio*100}%;background:${color}`})));
+    row.append(el("div",{class:"num"},el("b",{},String(cur)),` (${Math.round(ratio*100)}%)`));
+    const ti=el("input",{type:"number",min:"1",value:tgt,style:"padding:6px 8px;font-size:12.5px"});
+    ti.addEventListener("change",()=>{const v=parseInt(ti.value)||1;STATE.targets[b.key]=v;save();renderBoard();});
+    const wrap=el("div",{class:"field",style:"gap:0"},ti);
+    row.append(wrap);
+    head.append(row);
+  });
+  pb.append(head);
+  pb.append(el("div",{style:"margin-top:14px;font-size:11.5px;color:var(--ink-faint)"},
+    "Targets are stored with your data. CTO PCI = PCI cases flagged CTO · STEMI PCI = PCI flagged STEMI · Shock = any case flagged Cardiogenic Shock · Structural = TAVR / MitraClip / PFO / Structural."));
+  p.append(pb); root.append(p);
+}
+
+/* =================================================================
+   ANALYTICS (tables)
+   ================================================================= */
+function renderAnalytics(){
+  const root=$("#view-analytics"); root.innerHTML="";
+  if(!STATE.cases.length){ root.append(emptyState()); return; }
+  const cs=STATE.cases;
+
+  // Device tracker
+  root.append(el("div",{class:"section-label"},"Device & imaging utilization"));
+  const devRows=DEVICES.map(([k,n])=>{
+    const tot=cs.filter(c=>c.dev[k]).length;
+    const ytd=cs.filter(c=>c.dev[k]&&(c.date||"").slice(0,4)===String(new Date().getFullYear())).length;
+    return [n,tot,pct(tot,cs.length),ytd];
+  });
+  root.append(miniTable(["Device / Modality","Total","% of Cases","YTD"],devRows));
+
+  // Attending
+  root.append(el("div",{class:"section-label"},"Attending analytics"));
+  const attRows=STATE.lists.attendings.map(a=>{
+    const f=cs.filter(c=>c.attending===a);
+    return [a,f.length,f.filter(isPCI).length,f.filter(c=>c.complex.cto).length,
+      f.filter(c=>c.complex.shock).length,f.filter(isStructural).length];
+  }).filter(r=>r[1]>0).sort((a,b)=>b[1]-a[1]);
+  root.append(miniTable(["Attending","Total","PCI","CTO","Shock","Structural"],attRows));
+
+  // Monthly
+  root.append(el("div",{class:"section-label"},"Monthly activity"));
+  const months=lastMonths(12).reverse();
+  const moRows=months.map(m=>{
+    const f=cs.filter(c=>monthKey(c.date)===m);
+    return [fmtMonth(m),f.length,f.filter(isPCI).length,f.filter(c=>c.complex.cto).length,
+      f.filter(c=>c.complex.stemi).length,f.filter(c=>c.complex.shock).length,
+      f.filter(c=>c.dev.ivus).length,f.filter(c=>c.dev.ffr).length,f.filter(c=>c.dev.impella).length];
+  }).filter(r=>r[1]>0);
+  root.append(miniTable(["Month","Total","PCI","CTO","STEMI","Shock","IVUS","FFR","Impella"],moRows.length?moRows:[["No cases in range","","","","","","","",""]]));
+
+  // PCI detail summary
+  root.append(el("div",{class:"section-label"},"PCI procedural summary"));
+  const num=k=>cs.map(c=>parseFloat(c[k])).filter(v=>!isNaN(v));
+  const sum=a=>a.reduce((x,y)=>x+y,0);
+  const avg=a=>a.length?(sum(a)/a.length):0;
+  const pciN=cs.filter(isPCI).length;
+  const radial=cs.filter(c=>(c.access||"").startsWith("Radial")).length;
+  root.append(miniTable(["Metric","Value"],[
+    ["Total PCI cases",pciN],
+    ["Total stents placed",sum(num("stents"))],
+    ["Avg stents / PCI",pciN?(sum(num("stents"))/pciN).toFixed(1):"0"],
+    ["Total stent length (mm)",sum(num("length"))],
+    ["Avg largest stent dia (mm)",avg(num("dia")).toFixed(1)],
+    ["Avg contrast (mL)",Math.round(avg(num("contrast")))],
+    ["Avg fluoro time (min)",avg(num("fluoro")).toFixed(1)],
+    ["Total radiation dose (mGy)",Math.round(sum(num("dose")))],
+    ["Radial access %",pct(radial,cs.length)],
+  ]));
+}
+function miniTable(headers,rows){
+  const scroll=el("div",{class:"tbl-scroll"});
+  const t=el("table",{class:"mini"});
+  t.append(el("thead",{},el("tr",{},...headers.map((h,i)=>el("th",{style:i?"text-align:right":""},h)))));
+  const tb=el("tbody");
+  rows.forEach(r=>tb.append(el("tr",{},...r.map((v,i)=>el("td",{style:i?"text-align:right;font-variant-numeric:tabular-nums":"font-weight:600"},String(v))))));
+  t.append(tb); scroll.append(t); return scroll;
+}
+
+/* =================================================================
+   DATA & SETTINGS
+   ================================================================= */
+function renderData(){
+  const root=$("#view-data"); root.innerHTML="";
+
+  // PHI notice
+  root.append(el("div",{class:"notice",style:"margin-bottom:18px"},
+    el("div",{html:'<svg viewBox="0 0 24 24"><path d="M12 2l8 4v6c0 5-3.5 8-8 10-4.5-2-8-5-8-10V6z"/><path d="M9 12l2 2 4-4"/></svg>'}),
+    el("div",{},el("b",{},"Privacy & PHI. "),
+      "Your data lives only in this browser (localStorage) — nothing is uploaded. MRN, initials, age and date can be identifiable, so confirm with your program before logging real patients here, and export backups to an approved location. Clearing browser data deletes everything; export first.")));
+
+  // Backup / restore
+  const back=el("div",{class:"panel"});
+  back.append(el("div",{class:"ph"},el("h2",{},"Backup & restore")));
+  const bb=el("div",{class:"pb",style:"display:flex;gap:10px;flex-wrap:wrap"});
+  bb.append(el("button",{class:"btn primary",onclick:exportJSON},icon("download"),"Export backup (JSON)"));
+  bb.append(el("button",{class:"btn",onclick:exportCSV},icon("download"),"Export cases (CSV)"));
+  const imp=el("button",{class:"btn"},icon("upload"),"Import backup (JSON)");
+  const file=el("input",{type:"file",accept:".json",style:"display:none"});
+  file.addEventListener("change",importJSON); imp.addEventListener("click",()=>file.click());
+  bb.append(imp,file);
+  bb.append(el("button",{class:"btn",onclick:loadSample},"Load sample data"));
+  back.append(bb); root.append(back);
+
+  // Lists
+  const listsRow=el("div",{class:"cols",style:"margin-top:16px"});
+  listsRow.append(listEditor("Attendings","attendings"));
+  listsRow.append(listEditor("Hospitals","hospitals"));
+  root.append(listsRow);
+
+  // Danger
+  const dz=el("div",{class:"panel",style:"margin-top:16px"});
+  dz.append(el("div",{class:"ph"},el("h2",{},"Clear data")));
+  const db=el("div",{class:"pb",style:"display:flex;align-items:center;gap:14px;flex-wrap:wrap"});
+  db.append(el("div",{style:"font-size:12.5px;color:var(--ink-soft);flex:1;min-width:220px"},
+    `${STATE.cases.length} cases stored. This permanently deletes every case from this browser. Export a backup first.`));
+  db.append(el("button",{class:"btn danger",onclick:clearAll},icon("trash"),"Delete all cases"));
+  dz.append(db); root.append(dz);
+}
+function listEditor(title,key){
+  const p=el("div",{class:"panel c6"});
+  p.append(el("div",{class:"ph"},el("h2",{},title)));
+  const body=el("div",{class:"pb"});
+  const list=el("div",{class:"tag-list"});
+  const refresh=()=>{
+    list.innerHTML="";
+    STATE.lists[key].forEach((v,i)=>{
+      const tag=el("span",{class:"tag"},v,
+        el("button",{title:"Remove",onclick:()=>{STATE.lists[key].splice(i,1);save();refresh();}},"×"));
+      list.append(tag);
+    });
+    if(!STATE.lists[key].length) list.append(el("span",{style:"font-size:12px;color:var(--ink-faint)"},"None yet — add one below."));
+  };
+  refresh();
+  const add=el("div",{class:"inline-add"});
+  const inp=el("input",{type:"text",placeholder:"Add "+title.slice(0,-1).toLowerCase(),
+    style:"border:1px solid var(--line);border-radius:8px;padding:8px 11px;font-size:13px;flex:1"});
+  const addFn=()=>{const v=inp.value.trim();if(v&&!STATE.lists[key].includes(v)){STATE.lists[key].push(v);save();inp.value="";refresh();}};
+  inp.addEventListener("keydown",e=>{if(e.key==="Enter")addFn();});
+  add.append(inp,el("button",{class:"btn",onclick:addFn},"Add"));
+  body.append(list,add); p.append(body); return p;
+}
+
+/* ---------- export / import ---------- */
+function download(name,text,type){
+  const a=el("a",{href:URL.createObjectURL(new Blob([text],{type})),download:name});
+  document.body.append(a); a.click(); a.remove();
+}
+function exportJSON(){
+  const payload={app:"cath-log",version:1,exported:new Date().toISOString(),
+    cases:STATE.cases,targets:STATE.targets,lists:STATE.lists};
+  download(`cath-log-backup-${new Date().toISOString().slice(0,10)}.json`,JSON.stringify(payload,null,2),"application/json");
+  toast("Backup downloaded");
+}
+function exportCSV(){
+  const cols=["date","hospital","mrn","initials","age","sex","procedure","role","attending","outcome"];
+  const head=[...cols,...ANATOMY.map(a=>a[1]),...COMPLEX.map(a=>a[1]),...DEVICES.map(a=>a[1]),
+    "stents","length_mm","largest_dia_mm","access","contrast_mL","fluoro_min","dose_mGy","tags"];
+  const esc=v=>{v=v==null?"":String(v);return /[",\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v;};
+  const lines=[head.join(",")];
+  STATE.cases.forEach(c=>{
+    const row=[...cols.map(k=>c[k]),
+      ...ANATOMY.map(a=>c.anat[a[0]]?"Yes":""),...COMPLEX.map(a=>c.complex[a[0]]?"Yes":""),
+      ...DEVICES.map(a=>c.dev[a[0]]?"Yes":""),
+      c.stents,c.length,c.dia,c.access,c.contrast,c.fluoro,c.dose,c.tags];
+    lines.push(row.map(esc).join(","));
+  });
+  download(`cath-log-cases-${new Date().toISOString().slice(0,10)}.csv`,lines.join("\n"),"text/csv");
+  toast("CSV downloaded");
+}
+function importJSON(e){
+  const f=e.target.files[0]; if(!f)return;
+  const r=new FileReader();
+  r.onload=()=>{
+    try{
+      const d=JSON.parse(r.result);
+      if(!Array.isArray(d.cases)) throw new Error("no cases");
+      if(!confirm(`Import ${d.cases.length} cases? This replaces your current data.`)) return;
+      STATE.cases=d.cases; if(d.targets)STATE.targets=d.targets; if(d.lists)STATE.lists=d.lists;
+      BOARD.forEach(b=>{if(STATE.targets[b.key]==null)STATE.targets[b.key]=b.target;});
+      save(); toast("Backup imported"); go("dashboard");
+    }catch(err){ toast("That file couldn't be read as a backup"); }
+  };
+  r.readAsText(f); e.target.value="";
+}
+function clearAll(){
+  if(!confirm("Delete ALL cases from this browser? This cannot be undone.")) return;
+  if(!confirm("Really delete everything? Make sure you exported a backup.")) return;
+  STATE.cases=[]; save(); toast("All cases deleted"); go("dashboard");
+}
+
+/* ---------- sample data ---------- */
+function loadSample(){
+  if(STATE.cases.length && !confirm("Load sample data? This adds demo cases to what you already have.")) return;
+  const mk=(date,hospital,proc,role,att,outcome,anat,complex,dev,pci,tags)=>{
+    const b=blankCase(); Object.assign(b,{date,hospital,procedure:proc,role,attending:att,outcome,tags:tags||""});
+    anat.forEach(k=>b.anat[k]=true); complex.forEach(k=>b.complex[k]=true); dev.forEach(k=>b.dev[k]=true);
+    Object.assign(b,pci); b.id=uid(); return b;
+  };
+  const S=[
+    mk("2026-01-06","University Main","STEMI PCI","Primary Operator","Dr. Reyes","Successful",["lad"],["stemi","calcified"],["ivus","guideExt"],{stents:2,length:38,dia:3.5,access:"Radial - Right",contrast:180,fluoro:12.4,dose:920},"STEMI"),
+    mk("2026-01-14","University Main","Diagnostic Cath","First Assist","Dr. Patel","Successful",[],[],[],{access:"Femoral - Right",contrast:90,fluoro:4.1,dose:310},""),
+    mk("2026-01-22","VA Medical Center","CTO PCI","First Assist","Dr. Nguyen","Successful",["rca"],["cto","calcified"],["ivus","ivl","guideExt"],{stents:3,length:68,dia:3.0,access:"Radial - Right",contrast:260,fluoro:38.2,dose:2150},"CTO"),
+    mk("2026-02-03","University Main","Left Main PCI","First Assist","Dr. Reyes","Successful",["lm","lad","lcx"],["calcified","bifurcation","ostial","mvd"],["ivus","ffr","guideExt"],{stents:2,length:28,dia:4.0,access:"Femoral - Right",contrast:210,fluoro:16,dose:1180},"Left Main; Bifurcation"),
+    mk("2026-02-11","County General","NSTEMI PCI","Primary Operator","Dr. Patel","Successful",["lcx"],[],["ffr"],{stents:1,length:18,dia:3.0,access:"Radial - Left",contrast:140,fluoro:7.3,dose:560},""),
+    mk("2026-02-19","University Main","Shock PCI","First Assist","Dr. Kim","Partial",["lm","lad","rca"],["calcified","shock","stemi","mech","mvd"],["ivus","impella","guideExt"],{stents:3,length:54,dia:3.5,access:"Femoral - Right",contrast:230,fluoro:21.5,dose:1640},"Shock; Mechanical Support"),
+    mk("2026-03-04","Heart Institute","TAVR","Second Assist","Dr. Alvarez","Successful",[],["calcified"],[],{access:"Femoral - Right",contrast:120,fluoro:18.7,dose:1320},"Structural"),
+    mk("2026-03-12","University Main","PCI","Primary Operator","Dr. Reyes","Successful",["lad"],[],["ivus"],{stents:1,length:24,dia:3.5,access:"Radial - Right",contrast:110,fluoro:6,dose:480},""),
+    mk("2026-03-26","VA Medical Center","Bifurcation PCI","First Assist","Dr. Nguyen","Successful",["lad","lcx"],["calcified","bifurcation","mvd"],["ivus","oct","ffr","guideExt"],{stents:2,length:40,dia:3.0,access:"Radial - Right",contrast:200,fluoro:14.2,dose:1010},"Bifurcation"),
+    mk("2026-04-02","University Main","RHC","First Assist","Dr. Kim","Successful",[],[],[],{access:"Femoral - Right",contrast:20,fluoro:2.1,dose:140},""),
+    mk("2026-04-15","University Main","Orbital Atherectomy","First Assist","Dr. Reyes","Successful",["rca"],["calcified","ostial"],["ivus","orbital","guideExt"],{stents:2,length:32,dia:3.0,access:"Radial - Right",contrast:190,fluoro:15.5,dose:1120},"Calcified"),
+    mk("2026-05-07","County General","STEMI PCI","Primary Operator","Dr. Patel","Successful",["lad"],["stemi"],["guideExt"],{stents:1,length:22,dia:3.5,access:"Radial - Left",contrast:130,fluoro:5.8,dose:520},"STEMI"),
+    mk("2026-05-20","Heart Institute","MitraClip","Second Assist","Dr. Alvarez","Successful",[],[],[],{access:"Femoral - Right",contrast:60,fluoro:28,dose:980},"Structural"),
+    mk("2026-06-03","University Main","PCI","Primary Operator","Dr. Reyes","Successful",["lcx"],[],["ivus","ffr","dcb"],{stents:1,length:20,dia:3.0,access:"Radial - Right",contrast:100,fluoro:5,dose:430},""),
+  ];
+  // shift sample dates so they land in the recent 6 months relative to today
+  const today=new Date(); const baseYear=today.getFullYear(); const baseMonth=today.getMonth(); // 0-idx
+  S.forEach((c,i)=>{ const m=new Date(baseYear,baseMonth-5+Math.floor(i/2.4),1+ (i*5%25)); c.date=m.toISOString().slice(0,10); });
+  STATE.cases.push(...S); save(); toast("Sample data loaded"); go("dashboard");
+}
+
+/* ---------- icons ---------- */
+function icon(name){
+  const p={plus:'<path d="M12 5v14M5 12h14"/>',check:'<path d="M20 6L9 17l-5-5"/>',
+    trash:'<path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14"/>',
+    download:'<path d="M12 3v12M7 11l5 4 5-4M5 21h14"/>',upload:'<path d="M12 21V9M7 13l5-4 5 4M5 3h14"/>'}[name];
+  const s=document.createElementNS("http://www.w3.org/2000/svg","svg");
+  s.setAttribute("viewBox","0 0 24 24");s.innerHTML=p;return s;
+}
+
+/* ---------- boot ---------- */
+load(); go("dashboard");
+</script>
+</body>
+</html>
